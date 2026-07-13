@@ -1,6 +1,6 @@
 {
   "name": "openapi-agent-reference",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Generate agent-friendly Markdown API reference documentation from OpenAPI JSON.",
   "type": "commonjs",
   "bin": {
@@ -13,5 +13,17 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dikong1/extractOpenApi.git"
+  },
+  "homepage": "https://github.com/Dikong1/extractOpenApi#readme",
+  "bugs": {
+    "url": "https://github.com/Dikong1/extractOpenApi/issues"
+  },
+  "files": [
+    "src/",
+    "README.md"
+  ]
 }
