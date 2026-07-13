@@ -1,6 +1,6 @@
 {
   "name": "openapi-agent-reference",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Generate agent-friendly Markdown API reference documentation from OpenAPI JSON.",
   "type": "commonjs",
   "bin": {
