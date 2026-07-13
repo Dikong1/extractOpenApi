@@ -23,4 +23,9 @@ jobs:
 
       - run: npm ci
       - run: npm test
+      - run: npm pack --dry-run
+      - name: Verify release tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node -e "const expected = 'v' + require('./package.json').version; if (process.env.RELEASE_TAG !== expected) { console.error('Release tag must be ' + expected); process.exit(1); }"
       - run: npm publish

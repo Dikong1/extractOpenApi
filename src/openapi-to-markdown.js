@@ -1,48 +1,4 @@
-#!/usr/bin/env node
-
-const fs = require('node:fs');
-const path = require('node:path');
-
 const HTTP_METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
-
-function usage() {
-  return `Usage: openapi-to-md [openapi.json] [options]
-
-Options:
-  -o, --output <file>       Output Markdown file (default: API_REFERENCE.md)
-  --no-schema-catalog       Omit the reusable schema catalog
-  --no-examples             Omit generated JSON examples
-  --include-extensions      Include x-* operation extensions
-  -h, --help                Show this help
-`;
-}
-
-function parseArgs(argv) {
-  const options = {
-    input: 'openapi.json',
-    output: 'API_REFERENCE.md',
-    schemaCatalog: true,
-    examples: true,
-    includeExtensions: false,
-  };
-  let inputSet = false;
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === '-h' || arg === '--help') options.help = true;
-    else if (arg === '--no-schema-catalog') options.schemaCatalog = false;
-    else if (arg === '--no-examples') options.examples = false;
-    else if (arg === '--include-extensions') options.includeExtensions = true;
-    else if (arg === '-o' || arg === '--output') {
-      if (!argv[index + 1]) throw new Error(`${arg} requires a file path`);
-      options.output = argv[++index];
-    } else if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`);
-    else if (!inputSet) {
-      options.input = arg;
-      inputSet = true;
-    } else throw new Error(`Unexpected argument: ${arg}`);
-  }
-  return options;
-}
 
 function escapeTable(value) {
   return String(value ?? '—').replace(/\r?\n/g, '<br>').replace(/\|/g, '\\|');
@@ -264,6 +220,83 @@ function collectOperations(spec) {
   });
 }
 
+function formatGroupList(spec) {
+  const groups = collectOperations(spec);
+  const width = Math.max('GROUP'.length, ...groups.map(([name]) => name.length));
+  return [
+    `${'GROUP'.padEnd(width)}  OPERATIONS`,
+    `${'-'.repeat(width)}  ----------`,
+    ...groups.map(([name, operations]) => `${name.padEnd(width)}  ${operations.length}`),
+    '',
+  ].join('\n');
+}
+
+function groupList(spec) {
+  return collectOperations(spec).map(([name, operations]) => ({
+    name,
+    operations: operations.length,
+  }));
+}
+
+function levenshteinDistance(left, right) {
+  const a = left.toLocaleLowerCase();
+  const b = right.toLocaleLowerCase();
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= a.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= b.length; column += 1) {
+      current[column] = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[b.length];
+}
+
+function closestGroup(name, groups) {
+  if (!groups.length) return undefined;
+  const candidates = groups
+    .map(([candidate]) => ({ candidate, distance: levenshteinDistance(name, candidate) }))
+    .sort((left, right) => left.distance - right.distance || left.candidate.localeCompare(right.candidate));
+  const best = candidates[0];
+  const threshold = Math.max(2, Math.floor(Math.max(name.length, best.candidate.length) / 3));
+  return best.distance <= threshold ? best.candidate : undefined;
+}
+
+function referencedSchemaNames(groups, spec) {
+  const names = new Set();
+  const visitedRefs = new Set();
+  const visitedObjects = new Set();
+
+  function visit(value) {
+    if (!value || typeof value !== 'object' || visitedObjects.has(value)) return;
+    visitedObjects.add(value);
+    if (typeof value.$ref === 'string' && value.$ref.startsWith('#/')) {
+      const schemaMatch = value.$ref.match(/^#\/(?:components\/schemas|definitions)\/(.+)$/);
+      if (schemaMatch) {
+        const name = decodeURIComponent(schemaMatch[1].replace(/~1/g, '/').replace(/~0/g, '~'));
+        names.add(name);
+      }
+      if (!visitedRefs.has(value.$ref)) {
+        visitedRefs.add(value.$ref);
+        visit(resolveLocalRef(spec, value.$ref));
+      }
+    }
+    for (const nested of Object.values(value)) visit(nested);
+  }
+
+  for (const [, operations] of groups) {
+    for (const { operation, pathItem } of operations) {
+      visit(operation);
+      visit(pathItem.parameters);
+    }
+  }
+  return names;
+}
+
 function renderParameters(parameters, spec) {
   if (!parameters.length) return '';
   const lines = ['#### Parameters', '', '| Name | In | Required | Type | Description / constraints |', '|---|---|:---:|---|---|'];
@@ -418,27 +451,40 @@ function renderSchema(name, schema, spec, options) {
   return lines.join('\n');
 }
 
-function renderSchemas(spec, options) {
+function renderSchemas(spec, options, includedNames) {
   const schemas = spec.components?.schemas || spec.definitions || {};
-  if (!options.schemaCatalog || !Object.keys(schemas).length) return '';
-  const lines = ['## Schema catalog', '', `${Object.keys(schemas).length} reusable schema(s).`, ''];
-  for (const [name, schema] of Object.entries(schemas).sort(([a], [b]) => a.localeCompare(b))) {
+  const entries = Object.entries(schemas)
+    .filter(([name]) => !includedNames || includedNames.has(name))
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (!options.schemaCatalog || !entries.length) return '';
+  const lines = ['## Schema catalog', '', `${entries.length} reusable schema(s).`, ''];
+  for (const [name, schema] of entries) {
     lines.push(renderSchema(name, schema, spec, options));
   }
   return lines.join('\n');
 }
 
 function generateMarkdown(spec, options = {}) {
-  options = { schemaCatalog: true, examples: true, includeExtensions: false, ...options };
+  options = { schemaCatalog: true, examples: true, includeExtensions: false, group: undefined, ...options };
   if (!spec || typeof spec !== 'object') throw new Error('The OpenAPI document must be a JSON object');
   if (!spec.openapi && !spec.swagger) throw new Error('Missing required "openapi" or "swagger" version field');
   if (!spec.paths || typeof spec.paths !== 'object') throw new Error('Missing required "paths" object');
 
   const title = spec.info?.title || 'API Reference';
-  const groups = collectOperations(spec);
+  const allGroups = collectOperations(spec);
+  let groups = allGroups;
+  if (options.group !== undefined) {
+    groups = allGroups.filter(([name]) => name === options.group);
+    if (!groups.length) {
+      const available = allGroups.map(([name]) => name).join(', ') || '(none)';
+      const suggestion = closestGroup(options.group, allGroups);
+      const hint = suggestion ? ` Did you mean ${JSON.stringify(suggestion)}?` : '';
+      throw new Error(`Unknown group ${JSON.stringify(options.group)}.${hint} Available groups: ${available}`);
+    }
+  }
   const operationCount = groups.reduce((count, [, operations]) => count + operations.length, 0);
   const lines = [
-    `# ${title} API Reference`,
+    `# ${title}${options.group !== undefined ? ` — ${options.group}` : ''} API Reference`,
     '',
     '> Generated from the OpenAPI document. Optimized for human readers and AI agents: use operation IDs for tool names, honor required parameters, and validate request/response bodies against the linked schemas.',
     '',
@@ -477,40 +523,18 @@ function generateMarkdown(spec, options = {}) {
     for (const item of operations) lines.push(renderOperation(item, spec, options));
   }
 
-  const schemas = renderSchemas(spec, options);
+  const includedSchemas = options.group !== undefined ? referencedSchemaNames(groups, spec) : undefined;
+  const schemas = renderSchemas(spec, options, includedSchemas);
   if (schemas) lines.push(schemas);
   lines.push('---', '', '_Generated by openapi-agent-reference. Do not edit manually; regenerate after the OpenAPI document changes._', '');
   return lines.join('\n').replace(/\n{4,}/g, '\n\n\n');
 }
 
-function main(argv = process.argv.slice(2)) {
-  let options;
-  try { options = parseArgs(argv); } catch (error) {
-    console.error(`Error: ${error.message}\n\n${usage()}`);
-    process.exitCode = 1;
-    return;
-  }
-  if (options.help) {
-    process.stdout.write(usage());
-    return;
-  }
-  try {
-    const inputPath = path.resolve(options.input);
-    const outputPath = path.resolve(options.output);
-    const source = fs.readFileSync(inputPath, 'utf8').replace(/^\uFEFF/, '');
-    let spec;
-    try { spec = JSON.parse(source); } catch (error) { throw new Error(`Invalid JSON in ${inputPath}: ${error.message}`); }
-    const markdown = generateMarkdown(spec, options);
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, markdown, 'utf8');
-    const operations = collectOperations(spec).reduce((count, [, items]) => count + items.length, 0);
-    console.log(`Generated ${outputPath} (${operations} operations, ${Buffer.byteLength(markdown)} bytes)`);
-  } catch (error) {
-    console.error(`Error: ${error.message}`);
-    process.exitCode = 1;
-  }
-}
-
-if (require.main === module) main();
-
-module.exports = { generateMarkdown, parseArgs, sampleForSchema, collectOperations };
+module.exports = {
+  collectOperations,
+  formatGroupList,
+  generateMarkdown,
+  groupList,
+  referencedSchemaNames,
+  sampleForSchema,
+};

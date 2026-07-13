@@ -1,17 +1,24 @@
 {
   "name": "openapi-agent-reference",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "description": "Generate agent-friendly Markdown API reference documentation from OpenAPI JSON.",
   "type": "commonjs",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
   "bin": {
-    "openapi-to-md": "src/openapi-to-markdown.js"
+    "openapi-md": "bin/openapi-md.js"
   },
   "scripts": {
-    "generate": "node src/openapi-to-markdown.js openapi.json -o API_REFERENCE.md",
-    "test": "node --test"
+    "generate": "node bin/openapi-md.js generate openapi.json -o API_REFERENCE.md",
+    "groups": "node bin/openapi-md.js groups openapi.json",
+    "test": "node --test",
+    "prepublishOnly": "npm test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "license": "MIT",
   "repository": {
@@ -23,7 +30,22 @@
     "url": "https://github.com/Dikong1/extractOpenApi/issues"
   },
   "files": [
+    "bin/",
     "src/",
-    "README.md"
-  ]
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md"
+  ],
+  "keywords": [
+    "openapi",
+    "swagger",
+    "markdown",
+    "api-documentation",
+    "ai-agent",
+    "cli"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

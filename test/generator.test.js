@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { generateMarkdown, parseArgs, sampleForSchema } = require('../src/openapi-to-markdown');
+const { generateMarkdown, sampleForSchema, formatGroupList } = require('../src');
+const { parseArgs } = require('../src/cli');
 
 const spec = {
   openapi: '3.1.0',
@@ -20,6 +21,15 @@ const spec = {
         },
       },
     },
+    '/sessions': {
+      post: {
+        tags: ['Auth'],
+        operationId: 'createSession',
+        responses: {
+          201: { description: 'Created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Session' } } } },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: { bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
@@ -28,6 +38,10 @@ const spec = {
         type: 'object',
         required: ['id'],
         properties: { id: { type: 'string' }, email: { type: ['string', 'null'], format: 'email' } },
+      },
+      Session: {
+        type: 'object',
+        properties: { user: { $ref: '#/components/schemas/User' }, token: { type: 'string' } },
       },
     },
   },
@@ -51,6 +65,23 @@ test('respects output switches', () => {
   assert.doesNotMatch(markdown, /```json/);
 });
 
+test('lists the exact available group names and operation counts', () => {
+  const output = formatGroupList(spec);
+  assert.match(output, /^GROUP\s+OPERATIONS/m);
+  assert.match(output, /^Auth\s+1$/m);
+  assert.match(output, /^Users\s+1$/m);
+});
+
+test('generates only the requested exact group and its transitive schemas', () => {
+  const markdown = generateMarkdown(spec, { group: 'Auth' });
+  assert.match(markdown, /# Example — Auth API Reference/);
+  assert.match(markdown, /### POST \/sessions/);
+  assert.doesNotMatch(markdown, /### GET \/users/);
+  assert.match(markdown, /### Session/);
+  assert.match(markdown, /### User/);
+  assert.throws(() => generateMarkdown(spec, { group: 'auth' }), /Unknown group "auth"/);
+});
+
 test('creates finite examples for recursive refs', () => {
   const recursive = { ...spec, components: { schemas: { Node: { type: 'object', properties: { child: { $ref: '#/components/schemas/Node' } } } } } };
   assert.deepEqual(sampleForSchema({ $ref: '#/components/schemas/Node' }, recursive), { child: '<recursive:Node>' });
@@ -58,6 +89,10 @@ test('creates finite examples for recursive refs', () => {
 
 test('parses CLI arguments', () => {
   assert.deepEqual(parseArgs(['input.json', '-o', 'docs/api.md', '--no-examples']), {
-    input: 'input.json', output: 'docs/api.md', schemaCatalog: true, examples: false, includeExtensions: false,
+    command: 'generate', input: 'input.json', output: 'docs/api.md', schemaCatalog: true, examples: false, includeExtensions: false, group: undefined, json: false,
   });
+  assert.equal(parseArgs(['input.json', '--group', 'Users']).group, 'Users');
+  assert.equal(parseArgs(['input.json', '--list-groups']).command, 'groups');
+  assert.equal(parseArgs(['groups', 'input.json', '--json']).json, true);
+  assert.throws(() => parseArgs(['groups', '--group', 'Users']), /cannot be combined/);
 });
