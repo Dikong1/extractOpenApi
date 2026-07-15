@@ -1,6 +1,6 @@
 ---
 name: openapi-agent-reference
-description: Generate compact, navigable Markdown API references from OpenAPI or Swagger JSON documents with openapi-agent-reference. Use when an agent needs to inspect available API groups, document a complete API or one exact tag group, create agent-friendly endpoint and schema documentation, or regenerate Markdown after an OpenAPI JSON specification changes. Do not use for OpenAPI YAML unless it has first been converted to JSON.
+description: Generate compact, navigable Markdown API references from OpenAPI or Swagger JSON documents with openapi-agent-reference. Use when an agent needs to inspect available API groups, document a complete API or one exact tag group, create agent-friendly endpoint and schema documentation, pipe an OpenAPI document through stdin or stdout, or regenerate Markdown after an OpenAPI JSON specification changes. Do not use for OpenAPI YAML unless it has first been converted to JSON.
 ---
 
 # OpenAPI Agent Reference
@@ -44,12 +44,48 @@ If the target project already installs the package, prefer its local `openapi-md
 5. Check the exit status and diagnostic output. On an unknown group, use the suggested or listed exact name and rerun only when it matches the user's intended scope.
 6. Verify that the Markdown title, operation count, group headings, endpoints, and linked schemas match the requested scope. Confirm that focused output excludes unrelated groups.
 
+## Work with standard streams
+
+Use `-` in the input position to read one complete OpenAPI JSON document from stdin. Use `--output -` to write generated Markdown to stdout.
+
+List groups from a remote document without creating an input file:
+
+```bash
+curl -fsS https://example.com/openapi.json | npx --yes openapi-agent-reference@latest groups - --json
+```
+
+Generate a focused reference from stdin and write Markdown to stdout:
+
+```bash
+curl -fsS https://example.com/openapi.json | npx --yes openapi-agent-reference@latest generate - --group "Users" --output -
+```
+
+Redirect only the generated Markdown to a file:
+
+```bash
+curl -fsS https://example.com/openapi.json | npx --yes openapi-agent-reference@latest generate - --output - > API_REFERENCE.md
+```
+
+Use an existing local file as stdin when a pipeline is more convenient:
+
+```powershell
+Get-Content -Raw openapi.json | npx --yes openapi-agent-reference@latest generate - --output -
+```
+
+Apply these stream rules:
+
+- Treat stdout as data: group text, group JSON, or generated Markdown depending on the command and options.
+- Treat stderr as diagnostics. Do not merge stderr into stdout when piping or parsing results.
+- Consume stdout only after checking for a successful exit status. Invalid JSON and generation errors are reported on stderr.
+- Remember that stdin is consumed once. To list groups and then generate from the same remote document, download or buffer it once, or repeat the upstream request deliberately.
+- Validate remote responses before treating them as OpenAPI input. Do not pass an HTTP error page or authentication response to the generator.
+- Prefer stdin/stdout when the caller already holds the document in memory or a downstream process will consume the Markdown; prefer explicit file paths when the result is a persistent artifact.
+
 ## Select options deliberately
 
 - Use `--no-schema-catalog` only when reusable schema documentation is unwanted.
 - Use `--no-examples` when examples would be noisy, sensitive, or unnecessarily large.
 - Use `--include-extensions` when operation-level `x-*` metadata is relevant.
-- Use `-` for stdin or stdout in pipelines. Keep diagnostics on stderr.
 - Preserve external `$ref` URLs as references; do not imply that this package downloads or resolves them.
 
 For automation, prefer explicit input, group, and output arguments. Do not rely on the defaults `openapi.json` and `API_REFERENCE.md` unless those paths are intentional.
