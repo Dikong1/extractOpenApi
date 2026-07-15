@@ -16,6 +16,18 @@ node bin/openapi-md.js groups openapi.json
 node bin/openapi-md.js generate openapi.json --group "Access" --output -
 ```
 
+## Agent skill
+
+The distributable workflow lives in `.agents/skills/openapi-agent-reference/`. Keep its commands and option guidance synchronized with the CLI and README.
+
+After changing the skill, confirm that the skills CLI discovers it:
+
+```bash
+npx skills add . --list
+```
+
+The skill is intentionally excluded from the npm tarball by the `files` allowlist in `package.json`. Continue to run `npm pack --dry-run` and verify that `.agents/` is absent from the publish file list.
+
 ## Pull requests
 
 - Add or update tests for behavior changes.

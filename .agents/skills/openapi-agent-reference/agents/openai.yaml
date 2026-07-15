@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenAPI Agent Reference"
+  short_description: "Generate focused Markdown from OpenAPI specs"
+  default_prompt: "Use $openapi-agent-reference to generate a compact agent-friendly Markdown reference from this OpenAPI document."

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. The project
 
 ## Unreleased
 
+### Added
+
+- Optional `openapi-agent-reference` agent skill with installation and maintenance documentation.
+
 ## 2.0.0 - 2026-07-13
 
 ### Added

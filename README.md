@@ -28,6 +28,24 @@ npx openapi-md groups openapi.json
 npx openapi-md generate openapi.json -o API_REFERENCE.md
 ```
 
+## Agent skill
+
+The repository includes an optional agent skill that teaches compatible coding agents to discover exact OpenAPI groups, generate focused or complete Markdown references, and verify the result. The skill is separate from the npm runtime and does not change the package's CLI, exports, or dependencies.
+
+Install it from this GitHub repository with the open agent skills CLI:
+
+```bash
+npx skills add Dikong1/extractOpenApi --skill openapi-agent-reference
+```
+
+To target Codex explicitly:
+
+```bash
+npx skills add Dikong1/extractOpenApi --skill openapi-agent-reference --agent codex
+```
+
+Then invoke `$openapi-agent-reference` explicitly, or ask the agent to generate an agent-friendly Markdown reference from an OpenAPI JSON document. The skill calls this package's existing CLI; it does not contain a second generator implementation.
+
 ## CLI
 
 ### Discover groups
