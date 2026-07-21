@@ -1,13 +1,14 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const packageJson = require('../package.json');
+import assert from 'node:assert/strict';
+import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import packageJson from '../package.json';
+import type { OpenApiDocument } from '../src';
 
 const cli = path.resolve(__dirname, '../bin/openapi-md.js');
-const fixture = {
+const fixture: OpenApiDocument = {
   openapi: '3.1.0',
   info: { title: 'CLI fixture', version: '1.0.0' },
   paths: {
@@ -28,7 +29,7 @@ const fixture = {
   },
 };
 
-function invoke(args, options = {}) {
+function invoke(args: string[], options: Omit<SpawnSyncOptionsWithStringEncoding, 'encoding'> = {}) {
   return spawnSync(process.execPath, [cli, ...args], {
     encoding: 'utf8',
     ...options,

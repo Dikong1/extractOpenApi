@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file. The project
 
 ## Unreleased
 
+## 2.1.0 - 2026-07-21
+
 ### Added
 
+- TypeScript declarations for the public library API and OpenAPI document models.
 - Optional `openapi-agent-reference` agent skill with installation and maintenance documentation.
+
+### Changed
+
+- Migrated the source, CLI entry point, and tests from JavaScript to strict TypeScript.
+- Adopted Bun for dependency installation, type checking, tests, and local development.
+- Added a Node-compatible CommonJS build in `dist/` and automated it before npm packaging.
+- Updated CI and release workflows to verify Bun, TypeScript, compiled Node execution, and package installation.
 
 ## 2.0.0 - 2026-07-13
 

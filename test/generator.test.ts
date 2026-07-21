@@ -1,9 +1,9 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { generateMarkdown, sampleForSchema, formatGroupList } = require('../src');
-const { parseArgs } = require('../src/cli');
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { formatGroupList, generateMarkdown, sampleForSchema, type OpenApiDocument } from '../src';
+import { parseArgs } from '../src/cli';
 
-const spec = {
+const spec: OpenApiDocument = {
   openapi: '3.1.0',
   info: { title: 'Example', version: '1.0.0' },
   servers: [{ url: 'https://api.example.com' }],
@@ -83,7 +83,7 @@ test('generates only the requested exact group and its transitive schemas', () =
 });
 
 test('creates finite examples for recursive refs', () => {
-  const recursive = { ...spec, components: { schemas: { Node: { type: 'object', properties: { child: { $ref: '#/components/schemas/Node' } } } } } };
+  const recursive: OpenApiDocument = { ...spec, components: { schemas: { Node: { type: 'object', properties: { child: { $ref: '#/components/schemas/Node' } } } } } };
   assert.deepEqual(sampleForSchema({ $ref: '#/components/schemas/Node' }, recursive), { child: '<recursive:Node>' });
 });
 

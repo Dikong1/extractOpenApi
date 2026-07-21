@@ -1,21 +1,29 @@
 {
   "name": "openapi-agent-reference",
-  "version": "2.0.0",
+  "version": "2.1.0",
+  "packageManager": "bun@1.3.14",
   "description": "Generate agent-friendly Markdown API reference documentation from OpenAPI JSON.",
   "type": "commonjs",
-  "main": "./src/index.js",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
-    "openapi-md": "bin/openapi-md.js"
+    "openapi-md": "dist/bin/openapi-md.js"
   },
   "scripts": {
-    "generate": "node bin/openapi-md.js generate openapi.json -o API_REFERENCE.md",
-    "groups": "node bin/openapi-md.js groups openapi.json",
-    "test": "node --test",
-    "prepublishOnly": "npm test"
+    "build": "bunx tsc -p tsconfig.build.json",
+    "generate": "bun bin/openapi-md.ts generate openapi.json -o API_REFERENCE.md",
+    "groups": "bun bin/openapi-md.ts groups openapi.json",
+    "test": "bun test",
+    "typecheck": "bunx tsc -p tsconfig.json",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run test && bun run typecheck"
   },
   "engines": {
     "node": ">=22"
@@ -31,6 +39,7 @@
   },
   "files": [
     "bin/",
+    "dist/",
     "src/",
     "README.md",
     "LICENSE",
@@ -47,5 +56,9 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
   }
 }

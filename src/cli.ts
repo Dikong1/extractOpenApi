@@ -1,14 +1,36 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const packageJson = require('../package.json');
-const {
+import fs from 'node:fs';
+import path from 'node:path';
+import packageJson from '../package.json';
+import {
   collectOperations,
   formatGroupList,
   generateMarkdown,
   groupList,
-} = require('./openapi-to-markdown');
+  type GenerateOptions,
+  type OpenApiDocument,
+} from './openapi-to-markdown';
 
-function usage() {
+export type CliCommand = 'generate' | 'groups';
+
+export interface CliOptions extends GenerateOptions {
+  command: CliCommand;
+  help?: boolean;
+  input: string;
+  json: boolean;
+  output: string;
+  version?: boolean;
+}
+
+interface OutputStreams {
+  stderr: Pick<NodeJS.WriteStream, 'write'>;
+  stdout: Pick<NodeJS.WriteStream, 'write'>;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function usage(): string {
   return `Usage:
   openapi-md groups [openapi.json|-] [--json]
   openapi-md generate [openapi.json|-] [options]
@@ -33,18 +55,18 @@ Use - as the input path to read OpenAPI JSON from stdin.
 `;
 }
 
-function requiredValue(argv, index, option) {
+function requiredValue(argv: string[], index: number, option: string): string {
   const value = argv[index + 1];
   if (value === undefined || value.startsWith('-')) throw new Error(`${option} requires a value`);
   return value;
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
-  let command = 'generate';
-  if (args[0] === 'groups' || args[0] === 'generate') command = args.shift();
+  let command: CliCommand = 'generate';
+  if (args[0] === 'groups' || args[0] === 'generate') command = args.shift() as CliCommand;
 
-  const options = {
+  const options: CliOptions = {
     command,
     input: 'openapi.json',
     output: 'API_REFERENCE.md',
@@ -56,7 +78,7 @@ function parseArgs(argv) {
   };
   let inputSet = false;
   for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
+    const arg = args[index]!;
     if (arg === '-h' || arg === '--help') options.help = true;
     else if (arg === '-v' || arg === '--version') options.version = true;
     else if (arg === '--list-groups') options.command = 'groups';
@@ -90,18 +112,19 @@ function parseArgs(argv) {
   return options;
 }
 
-function readSpec(input) {
+export function readSpec(input: string): OpenApiDocument {
   const label = input === '-' ? 'stdin' : path.resolve(input);
   const source = fs.readFileSync(input === '-' ? 0 : label, 'utf8').replace(/^\uFEFF/, '');
-  let spec;
-  try { spec = JSON.parse(source); } catch (error) { throw new Error(`Invalid JSON in ${label}: ${error.message}`); }
-  if (!spec || typeof spec !== 'object' || (!spec.openapi && !spec.swagger) || !spec.paths || typeof spec.paths !== 'object') {
+  let spec: unknown;
+  try { spec = JSON.parse(source); } catch (error) { throw new Error(`Invalid JSON in ${label}: ${errorMessage(error)}`); }
+  const candidate = spec as Record<string, unknown> | null;
+  if (!candidate || (!candidate.openapi && !candidate.swagger) || !candidate.paths || typeof candidate.paths !== 'object') {
     throw new Error('Input is not a valid OpenAPI document with a paths object');
   }
-  return spec;
+  return spec as OpenApiDocument;
 }
 
-function writeFileSafely(outputPath, content) {
+export function writeFileSafely(outputPath: string, content: string): string {
   const absolutePath = path.resolve(outputPath);
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
   const temporaryPath = path.join(
@@ -111,8 +134,9 @@ function writeFileSafely(outputPath, content) {
   fs.writeFileSync(temporaryPath, content, 'utf8');
   try {
     fs.renameSync(temporaryPath, absolutePath);
-  } catch (error) {
-    if (!['EEXIST', 'EPERM'].includes(error.code)) throw error;
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!code || !['EEXIST', 'EPERM'].includes(code)) throw error;
     fs.copyFileSync(temporaryPath, absolutePath);
     fs.unlinkSync(temporaryPath);
   } finally {
@@ -121,10 +145,10 @@ function writeFileSafely(outputPath, content) {
   return absolutePath;
 }
 
-function run(argv = process.argv.slice(2), streams = process) {
-  let options;
+export function run(argv: string[] = process.argv.slice(2), streams: OutputStreams = process): number {
+  let options: CliOptions;
   try { options = parseArgs(argv); } catch (error) {
-    streams.stderr.write(`Error: ${error.message}\n\n${usage()}`);
+    streams.stderr.write(`Error: ${errorMessage(error)}\n\n${usage()}`);
     return 1;
   }
   if (options.help) {
@@ -155,13 +179,11 @@ function run(argv = process.argv.slice(2), streams = process) {
     streams.stdout.write(`Generated ${outputPath}${scope} (${operations} operations, ${Buffer.byteLength(markdown)} bytes)\n`);
     return 0;
   } catch (error) {
-    streams.stderr.write(`Error: ${error.message}\n`);
+    streams.stderr.write(`Error: ${errorMessage(error)}\n`);
     return 1;
   }
 }
 
-function main(argv = process.argv.slice(2)) {
+export function main(argv: string[] = process.argv.slice(2)): void {
   process.exitCode = run(argv);
 }
-
-module.exports = { main, parseArgs, readSpec, run, usage, writeFileSafely };

@@ -21,8 +21,11 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
 
-      - run: npm ci
-      - run: npm test
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
       - run: npm pack --dry-run
       - name: Verify release tag matches package version
         env:

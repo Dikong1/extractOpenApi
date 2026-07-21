@@ -1,17 +1,142 @@
+type SecurityRequirement = Record<string, string[]>;
+
+interface ExternalDocumentation {
+  description?: string;
+  url: string;
+}
+
+export interface OpenApiObject {
+  [key: string]: unknown;
+  $ref?: string;
+  additionalProperties?: boolean | OpenApiObject;
+  allOf?: OpenApiObject[];
+  allowEmptyValue?: boolean;
+  anyOf?: OpenApiObject[];
+  authorizationUrl?: string;
+  bearerFormat?: string;
+  const?: unknown;
+  content?: Record<string, OpenApiObject>;
+  contentType?: string;
+  default?: unknown;
+  deprecated?: boolean;
+  description?: string;
+  discriminator?: { propertyName: string };
+  encoding?: Record<string, OpenApiObject>;
+  enum?: unknown[];
+  example?: unknown;
+  examples?: unknown[] | Record<string, OpenApiObject>;
+  explode?: boolean;
+  externalDocs?: ExternalDocumentation;
+  flow?: string;
+  flows?: Record<string, OpenApiObject>;
+  format?: string;
+  headers?: Record<string, OpenApiObject>;
+  in?: string;
+  items?: OpenApiObject;
+  links?: Record<string, OpenApiObject>;
+  maximum?: number;
+  maxLength?: number;
+  minimum?: number;
+  minLength?: number;
+  name?: string;
+  oneOf?: OpenApiObject[];
+  openIdConnectUrl?: string;
+  operationId?: string;
+  operationRef?: string;
+  parameters?: OpenApiObject[];
+  pattern?: string;
+  properties?: Record<string, OpenApiObject>;
+  readOnly?: boolean;
+  requestBody?: OpenApiObject;
+  required?: boolean | string[];
+  responses?: Record<string, OpenApiObject>;
+  schema?: OpenApiObject;
+  scheme?: string;
+  scopes?: Record<string, string>;
+  security?: SecurityRequirement[];
+  style?: string;
+  summary?: string;
+  tags?: string[];
+  tokenUrl?: string;
+  type?: string | string[];
+  value?: unknown;
+  writeOnly?: boolean;
+}
+
+interface OpenApiInfo {
+  contact?: { email?: string; url?: string };
+  description?: string;
+  termsOfService?: string;
+  title?: string;
+  version?: string;
+}
+
+interface OpenApiTag {
+  description?: string;
+  externalDocs?: ExternalDocumentation;
+  name: string;
+}
+
+export interface OpenApiDocument {
+  [key: string]: unknown;
+  basePath?: string;
+  components?: {
+    schemas?: Record<string, OpenApiObject>;
+    securitySchemes?: Record<string, OpenApiObject>;
+  };
+  definitions?: Record<string, OpenApiObject>;
+  externalDocs?: ExternalDocumentation;
+  host?: string;
+  info?: OpenApiInfo;
+  openapi?: string;
+  paths: Record<string, OpenApiObject>;
+  schemes?: string[];
+  security?: SecurityRequirement[];
+  securityDefinitions?: Record<string, OpenApiObject>;
+  servers?: Array<{ description?: string; url: string }>;
+  swagger?: string;
+  tags?: OpenApiTag[];
+}
+
+export interface GenerateOptions {
+  examples?: boolean;
+  group?: string;
+  includeExtensions?: boolean;
+  schemaCatalog?: boolean;
+}
+
+export interface OperationItem {
+  method: string;
+  operation: OpenApiObject;
+  pathItem: OpenApiObject;
+  route: string;
+}
+
+export type OperationGroup = [name: string, operations: OperationItem[]];
+
+interface SampleState {
+  depth: number;
+  refs: Set<string>;
+}
+
 const HTTP_METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
 
-function escapeTable(value) {
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function escapeTable(value: unknown): string {
   return String(value ?? '—').replace(/\r?\n/g, '<br>').replace(/\|/g, '\\|');
 }
 
-function inlineCode(value) {
+function inlineCode(value: unknown): string {
   if (value === undefined || value === null || value === '') return '—';
   const string = String(value);
   const fence = string.includes('`') ? '``' : '`';
   return `${fence}${string}${fence}`;
 }
 
-function anchor(value) {
+function anchor(value: unknown): string {
   return String(value)
     .toLowerCase()
     .trim()
@@ -20,26 +145,28 @@ function anchor(value) {
     .replace(/-+/g, '-');
 }
 
-function localRefName(ref) {
+function localRefName(ref: unknown): string | null {
   if (typeof ref !== 'string' || !ref.startsWith('#/')) return null;
   const parts = ref.split('/');
-  return decodeURIComponent(parts[parts.length - 1].replace(/~1/g, '/').replace(/~0/g, '~'));
+  const name = parts.at(-1);
+  return name ? decodeURIComponent(name.replace(/~1/g, '/').replace(/~0/g, '~')) : null;
 }
 
-function resolveLocalRef(spec, ref) {
+function resolveLocalRef(spec: OpenApiDocument, ref: unknown): OpenApiObject | undefined {
   if (typeof ref !== 'string' || !ref.startsWith('#/')) return undefined;
-  return ref.slice(2).split('/').reduce((current, part) => {
+  const resolved = ref.slice(2).split('/').reduce<unknown>((current, part) => {
     const key = decodeURIComponent(part.replace(/~1/g, '/').replace(/~0/g, '~'));
-    return current && current[key];
+    return isObject(current) ? current[key] : undefined;
   }, spec);
+  return isObject(resolved) ? resolved as OpenApiObject : undefined;
 }
 
-function schemaLink(ref) {
+function schemaLink(ref: unknown): string {
   const name = localRefName(ref);
   return name ? `[${inlineCode(name)}](#schema-${anchor(name)})` : inlineCode(ref);
 }
 
-function schemaType(schema) {
+function schemaType(schema: OpenApiObject | undefined): string {
   if (!schema) return 'any';
   if (schema.$ref) return localRefName(schema.$ref) || schema.$ref;
   if (schema.const !== undefined) return typeof schema.const;
@@ -56,7 +183,7 @@ function schemaType(schema) {
   return 'any';
 }
 
-function schemaSummary(schema) {
+function schemaSummary(schema: OpenApiObject | undefined): string {
   if (!schema) return 'any';
   if (schema.$ref) return schemaLink(schema.$ref);
   let summary = inlineCode(schemaType(schema));
@@ -70,20 +197,24 @@ function schemaSummary(schema) {
   return summary;
 }
 
-function firstExample(container) {
+function firstExample(container: OpenApiObject | undefined): unknown {
   if (!container) return undefined;
   if (container.example !== undefined) return container.example;
   if (container.examples) {
     const example = Object.values(container.examples)[0];
-    if (example && typeof example === 'object' && 'value' in example) return example.value;
+    if (isObject(example) && 'value' in example) return example.value;
   }
   return undefined;
 }
 
-function sampleForSchema(schema, spec, state = { depth: 0, refs: new Set() }) {
+export function sampleForSchema(
+  schema: OpenApiObject | undefined,
+  spec: OpenApiDocument,
+  state: SampleState = { depth: 0, refs: new Set<string>() },
+): unknown {
   if (!schema || state.depth > 6) return null;
   if (schema.example !== undefined) return schema.example;
-  if (schema.examples?.length) return schema.examples[0];
+  if (Array.isArray(schema.examples) && schema.examples.length) return schema.examples[0];
   if (schema.default !== undefined) return schema.default;
   if (schema.const !== undefined) return schema.const;
   if (schema.enum?.length) return schema.enum[0];
@@ -108,7 +239,7 @@ function sampleForSchema(schema, spec, state = { depth: 0, refs: new Set() }) {
   }
   const type = Array.isArray(schema.type) ? schema.type.find((item) => item !== 'null') : schema.type;
   if (type === 'object' || schema.properties || schema.additionalProperties) {
-    const result = {};
+    const result: Record<string, unknown> = {};
     for (const [name, property] of Object.entries(schema.properties || {})) {
       if (property.readOnly) continue;
       result[name] = sampleForSchema(property, spec, { ...state, depth: state.depth + 1 });
@@ -132,14 +263,17 @@ function sampleForSchema(schema, spec, state = { depth: 0, refs: new Set() }) {
   return 'string';
 }
 
-function jsonBlock(value) {
+function jsonBlock(value: unknown): string {
   let rendered;
   try { rendered = JSON.stringify(value, null, 2); } catch { rendered = 'null'; }
   return `\n\`\`\`json\n${rendered}\n\`\`\`\n`;
 }
 
-function mergeParameters(pathParameters = [], operationParameters = []) {
-  const merged = new Map();
+function mergeParameters(
+  pathParameters: OpenApiObject[] = [],
+  operationParameters: OpenApiObject[] = [],
+): OpenApiObject[] {
+  const merged = new Map<string, OpenApiObject>();
   for (const parameter of [...pathParameters, ...operationParameters]) {
     const key = parameter.$ref || `${parameter.in}:${parameter.name}`;
     merged.set(key, parameter);
@@ -147,11 +281,13 @@ function mergeParameters(pathParameters = [], operationParameters = []) {
   return [...merged.values()];
 }
 
-function resolvedObject(spec, object) {
-  return object?.$ref ? { ...resolveLocalRef(spec, object.$ref), ...object, $ref: object.$ref } : object;
+function resolvedObject<T extends OpenApiObject>(spec: OpenApiDocument, object: T | undefined): T | undefined {
+  return object?.$ref
+    ? { ...resolveLocalRef(spec, object.$ref), ...object, $ref: object.$ref } as T
+    : object;
 }
 
-function securityText(requirements, spec) {
+function securityText(requirements: SecurityRequirement[] | undefined, spec: OpenApiDocument): string {
   if (requirements === undefined) requirements = spec.security;
   if (requirements === undefined) return 'Not specified';
   if (requirements.length === 0) return 'None';
@@ -162,7 +298,7 @@ function securityText(requirements, spec) {
   }).join(' OR ');
 }
 
-function renderSecurity(spec) {
+function renderSecurity(spec: OpenApiDocument): string {
   const schemes = spec.components?.securitySchemes || spec.securityDefinitions || {};
   if (!Object.keys(schemes).length && !spec.security) return '';
   const lines = ['## Authentication', ''];
@@ -190,7 +326,7 @@ function renderSecurity(spec) {
   return lines.join('\n');
 }
 
-function serverUrls(spec) {
+function serverUrls(spec: OpenApiDocument): Array<{ description?: string; url: string }> {
   if (spec.servers?.length) return spec.servers.map((server) => ({ url: server.url, description: server.description }));
   if (spec.swagger) {
     const schemes = spec.schemes?.length ? spec.schemes : ['https'];
@@ -199,16 +335,17 @@ function serverUrls(spec) {
   return [];
 }
 
-function collectOperations(spec) {
-  const groups = new Map();
+export function collectOperations(spec: OpenApiDocument): OperationGroup[] {
+  const groups = new Map<string, OperationItem[]>();
   for (const [route, rawPathItem] of Object.entries(spec.paths || {})) {
     const pathItem = resolvedObject(spec, rawPathItem) || rawPathItem;
     for (const [method, rawOperation] of Object.entries(pathItem || {})) {
       if (!HTTP_METHODS.has(method.toLowerCase())) continue;
-      const operation = resolvedObject(spec, rawOperation);
+      if (!isObject(rawOperation)) continue;
+      const operation = resolvedObject(spec, rawOperation as OpenApiObject) ?? rawOperation as OpenApiObject;
       const group = operation.tags?.[0] || 'Untagged';
       if (!groups.has(group)) groups.set(group, []);
-      groups.get(group).push({ route, method: method.toUpperCase(), operation, pathItem });
+      groups.get(group)!.push({ route, method: method.toUpperCase(), operation, pathItem });
     }
   }
   const declaredOrder = (spec.tags || []).map((tag) => tag.name);
@@ -220,7 +357,7 @@ function collectOperations(spec) {
   });
 }
 
-function formatGroupList(spec) {
+export function formatGroupList(spec: OpenApiDocument): string {
   const groups = collectOperations(spec);
   const width = Math.max('GROUP'.length, ...groups.map(([name]) => name.length));
   return [
@@ -231,14 +368,14 @@ function formatGroupList(spec) {
   ].join('\n');
 }
 
-function groupList(spec) {
+export function groupList(spec: OpenApiDocument): Array<{ name: string; operations: number }> {
   return collectOperations(spec).map(([name, operations]) => ({
     name,
     operations: operations.length,
   }));
 }
 
-function levenshteinDistance(left, right) {
+function levenshteinDistance(left: string, right: string): number {
   const a = left.toLocaleLowerCase();
   const b = right.toLocaleLowerCase();
   const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
@@ -246,38 +383,40 @@ function levenshteinDistance(left, right) {
     const current = [row];
     for (let column = 1; column <= b.length; column += 1) {
       current[column] = Math.min(
-        current[column - 1] + 1,
-        previous[column] + 1,
-        previous[column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1),
+        current[column - 1]! + 1,
+        previous[column]! + 1,
+        previous[column - 1]! + (a[row - 1] === b[column - 1] ? 0 : 1),
       );
     }
     previous.splice(0, previous.length, ...current);
   }
-  return previous[b.length];
+  return previous[b.length]!;
 }
 
-function closestGroup(name, groups) {
+function closestGroup(name: string, groups: OperationGroup[]): string | undefined {
   if (!groups.length) return undefined;
   const candidates = groups
     .map(([candidate]) => ({ candidate, distance: levenshteinDistance(name, candidate) }))
     .sort((left, right) => left.distance - right.distance || left.candidate.localeCompare(right.candidate));
   const best = candidates[0];
+  if (!best) return undefined;
   const threshold = Math.max(2, Math.floor(Math.max(name.length, best.candidate.length) / 3));
   return best.distance <= threshold ? best.candidate : undefined;
 }
 
-function referencedSchemaNames(groups, spec) {
-  const names = new Set();
-  const visitedRefs = new Set();
-  const visitedObjects = new Set();
+export function referencedSchemaNames(groups: OperationGroup[], spec: OpenApiDocument): Set<string> {
+  const names = new Set<string>();
+  const visitedRefs = new Set<string>();
+  const visitedObjects = new Set<object>();
 
-  function visit(value) {
+  function visit(value: unknown): void {
     if (!value || typeof value !== 'object' || visitedObjects.has(value)) return;
     visitedObjects.add(value);
+    if (!isObject(value)) return;
     if (typeof value.$ref === 'string' && value.$ref.startsWith('#/')) {
       const schemaMatch = value.$ref.match(/^#\/(?:components\/schemas|definitions)\/(.+)$/);
       if (schemaMatch) {
-        const name = decodeURIComponent(schemaMatch[1].replace(/~1/g, '/').replace(/~0/g, '~'));
+        const name = decodeURIComponent(schemaMatch[1]!.replace(/~1/g, '/').replace(/~0/g, '~'));
         names.add(name);
       }
       if (!visitedRefs.has(value.$ref)) {
@@ -297,7 +436,7 @@ function referencedSchemaNames(groups, spec) {
   return names;
 }
 
-function renderParameters(parameters, spec) {
+function renderParameters(parameters: OpenApiObject[], spec: OpenApiDocument): string {
   if (!parameters.length) return '';
   const lines = ['#### Parameters', '', '| Name | In | Required | Type | Description / constraints |', '|---|---|:---:|---|---|'];
   for (const rawParameter of parameters) {
@@ -310,8 +449,13 @@ function renderParameters(parameters, spec) {
   return lines.join('\n');
 }
 
-function renderContent(content, spec, options, headingLevel = 5) {
-  const lines = [];
+function renderContent(
+  content: Record<string, OpenApiObject> | undefined,
+  spec: OpenApiDocument,
+  options: GenerateOptions,
+  headingLevel = 5,
+): string {
+  const lines: string[] = [];
   for (const [mediaType, media] of Object.entries(content || {})) {
     lines.push(`${'#'.repeat(headingLevel)} ${mediaType}`, '');
     if (media.schema) lines.push(`Schema: ${schemaSummary(media.schema)}`, '');
@@ -330,17 +474,30 @@ function renderContent(content, spec, options, headingLevel = 5) {
   return lines.join('\n');
 }
 
-function swaggerRequestContent(parameters) {
+function swaggerRequestContent(parameters: OpenApiObject[]): Record<string, OpenApiObject> {
   const body = parameters.find((parameter) => parameter.in === 'body');
   if (body) return { 'application/json': { schema: body.schema, example: body.example } };
   const form = parameters.filter((parameter) => parameter.in === 'formData');
   if (form.length) {
-    return { 'application/x-www-form-urlencoded': { schema: { type: 'object', properties: Object.fromEntries(form.map((p) => [p.name, p])), required: form.filter((p) => p.required).map((p) => p.name) } } };
+    return {
+      'application/x-www-form-urlencoded': {
+        schema: {
+          type: 'object',
+          properties: Object.fromEntries(form.filter((parameter) => parameter.name).map((parameter) => [parameter.name, parameter])),
+          required: form.filter((parameter) => parameter.required && parameter.name).map((parameter) => parameter.name as string),
+        },
+      },
+    };
   }
   return {};
 }
 
-function renderRequest(operation, parameters, spec, options) {
+function renderRequest(
+  operation: OpenApiObject,
+  parameters: OpenApiObject[],
+  spec: OpenApiDocument,
+  options: GenerateOptions,
+): string {
   const rawBody = operation.requestBody ? resolvedObject(spec, operation.requestBody) : null;
   const content = rawBody?.content || swaggerRequestContent(parameters);
   if (!Object.keys(content).length) return '';
@@ -351,7 +508,7 @@ function renderRequest(operation, parameters, spec, options) {
   return lines.join('\n');
 }
 
-function renderHeaders(headers, spec) {
+function renderHeaders(headers: Record<string, OpenApiObject> | undefined, spec: OpenApiDocument): string {
   if (!headers || !Object.keys(headers).length) return '';
   const lines = ['Headers:', '', '| Name | Type | Description |', '|---|---|---|'];
   for (const [name, rawHeader] of Object.entries(headers)) {
@@ -362,7 +519,7 @@ function renderHeaders(headers, spec) {
   return lines.join('\n');
 }
 
-function renderResponses(operation, spec, options) {
+function renderResponses(operation: OpenApiObject, spec: OpenApiDocument, options: GenerateOptions): string {
   const lines = ['#### Responses', ''];
   const responses = operation.responses || {};
   if (!Object.keys(responses).length) return [...lines, '_No responses documented._', ''].join('\n');
@@ -383,17 +540,17 @@ function renderResponses(operation, spec, options) {
   return lines.join('\n');
 }
 
-function renderExtensions(operation) {
+function renderExtensions(operation: OpenApiObject): string {
   const extensions = Object.entries(operation).filter(([key]) => key.startsWith('x-'));
   if (!extensions.length) return '';
   return ['#### Extensions', '', ...extensions.map(([key, value]) => `- ${inlineCode(key)}: ${inlineCode(JSON.stringify(value))}`), ''].join('\n');
 }
 
-function renderOperation(item, spec, options) {
+function renderOperation(item: OperationItem, spec: OpenApiDocument, options: GenerateOptions): string {
   const { route, method, operation, pathItem } = item;
   const title = operation.summary || operation.operationId || `${method} ${route}`;
   const parameters = mergeParameters(pathItem.parameters, operation.parameters).map((parameter) => resolvedObject(spec, parameter) || parameter);
-  const nonBodyParameters = parameters.filter((parameter) => !['body', 'formData'].includes(parameter.in));
+  const nonBodyParameters = parameters.filter((parameter) => !['body', 'formData'].includes(parameter.in ?? ''));
   const lines = [
     `### ${method} ${route}`,
     '',
@@ -406,7 +563,8 @@ function renderOperation(item, spec, options) {
   metadata.push(`- Authentication: **${securityText(operation.security, spec)}**`);
   if (operation.deprecated) metadata.push('- Status: **Deprecated**');
   if (operation.externalDocs?.url) metadata.push(`- External docs: [${operation.externalDocs.description || operation.externalDocs.url}](${operation.externalDocs.url})`);
-  if (operation.tags?.length > 1) metadata.push(`- Additional tags: ${operation.tags.slice(1).map(inlineCode).join(', ')}`);
+  const additionalTags = operation.tags;
+  if (additionalTags && additionalTags.length > 1) metadata.push(`- Additional tags: ${additionalTags.slice(1).map(inlineCode).join(', ')}`);
   lines.push(...metadata, '');
   const parameterSection = renderParameters(nonBodyParameters, spec);
   if (parameterSection) lines.push(parameterSection);
@@ -420,19 +578,22 @@ function renderOperation(item, spec, options) {
   return lines.join('\n');
 }
 
-function flattenSchemaProperties(schema, spec) {
+function flattenSchemaProperties(
+  schema: OpenApiObject,
+  spec: OpenApiDocument,
+): { properties: Record<string, OpenApiObject>; required: Set<string> } {
   const properties = { ...(schema.properties || {}) };
-  const required = new Set(schema.required || []);
+  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
   for (const part of schema.allOf || []) {
     const resolved = part.$ref ? resolveLocalRef(spec, part.$ref) : part;
     if (!resolved) continue;
     Object.assign(properties, resolved.properties || {});
-    for (const name of resolved.required || []) required.add(name);
+    for (const name of Array.isArray(resolved.required) ? resolved.required : []) required.add(name);
   }
   return { properties, required };
 }
 
-function renderSchema(name, schema, spec, options) {
+function renderSchema(name: string, schema: OpenApiObject, spec: OpenApiDocument, options: GenerateOptions): string {
   const lines = [`<a id="schema-${anchor(name)}"></a>`, '', `### ${name}`, ''];
   if (schema.description) lines.push(schema.description, '');
   lines.push(`Type: ${schemaSummary(schema)}`, '');
@@ -451,7 +612,7 @@ function renderSchema(name, schema, spec, options) {
   return lines.join('\n');
 }
 
-function renderSchemas(spec, options, includedNames) {
+function renderSchemas(spec: OpenApiDocument, options: GenerateOptions, includedNames?: Set<string>): string {
   const schemas = spec.components?.schemas || spec.definitions || {};
   const entries = Object.entries(schemas)
     .filter(([name]) => !includedNames || includedNames.has(name))
@@ -464,7 +625,7 @@ function renderSchemas(spec, options, includedNames) {
   return lines.join('\n');
 }
 
-function generateMarkdown(spec, options = {}) {
+export function generateMarkdown(spec: OpenApiDocument, options: GenerateOptions = {}): string {
   options = { schemaCatalog: true, examples: true, includeExtensions: false, group: undefined, ...options };
   if (!spec || typeof spec !== 'object') throw new Error('The OpenAPI document must be a JSON object');
   if (!spec.openapi && !spec.swagger) throw new Error('Missing required "openapi" or "swagger" version field');
@@ -529,12 +690,3 @@ function generateMarkdown(spec, options = {}) {
   lines.push('---', '', '_Generated by openapi-agent-reference. Do not edit manually; regenerate after the OpenAPI document changes._', '');
   return lines.join('\n').replace(/\n{4,}/g, '\n\n\n');
 }
-
-module.exports = {
-  collectOperations,
-  formatGroupList,
-  generateMarkdown,
-  groupList,
-  referencedSchemaNames,
-  sampleForSchema,
-};

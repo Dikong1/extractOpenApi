@@ -2,18 +2,19 @@
 
 ## Development
 
-Use Node.js 22 or newer.
+Use Bun 1.3 and Node.js 22 or newer.
 
 ```bash
-npm ci
-npm test
+bun install --frozen-lockfile
+bun run typecheck
+bun test
 ```
 
 Run the CLI directly while developing:
 
 ```bash
-node bin/openapi-md.js groups openapi.json
-node bin/openapi-md.js generate openapi.json --group "Access" --output -
+bun run groups
+bun bin/openapi-md.ts generate openapi.json --group "Access" --output -
 ```
 
 ## Agent skill
